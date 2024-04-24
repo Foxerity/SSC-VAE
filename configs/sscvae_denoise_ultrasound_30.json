@@ -1,0 +1,32 @@
+{
+    "data": {
+        "dataset": "ultrasound",
+        "root_dir": "./dataset",
+        "quality": "high_quality",
+        "seed": 1,
+        "train_ratio": 0.8,
+        "val_ratio": 0.1,
+        "batch_size": 16,
+        "sigma": 30
+    },
+    "model": {
+        "in_channels": 1,
+        "hid_channels_1": 128,
+        "hid_channels_2": 512,
+        "out_channels": 256,
+        "down_samples": 3,
+        "num_groups": 16,
+        "num_atoms": 512,
+        "num_dims": 256,
+        "num_iters": 16
+    },
+    "train": {
+        "lr": 1e-4,
+        "epochs": 400,
+        "save_frequency": 1,
+        "save_path": "./results/sscvae_denoise_ultrasound_30"
+    },
+    "test": {
+        "model_id": 0
+    }
+}
