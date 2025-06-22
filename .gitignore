@@ -1,0 +1,7 @@
+/results
+/.idea
+/.vscode
+*.png
+*.jpg
+*.pt
+/__pycache__
