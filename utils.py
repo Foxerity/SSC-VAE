@@ -203,6 +203,187 @@ class MiniImagenet(Dataset):
 
         return image, name
 
+class Imagenet(Dataset):
+    def __init__(self,
+                 root_dir: str,
+                 mode: str,
+                 patch_size: int,
+                 stride_size: int,
+                 transform=None):
+        # root_dir should be like "/data/ymx/dataset/imagenet-part/imgnet/"
+        # which contains train/, val/, test/ subdirectories
+        mode_dir = os.path.join(root_dir, mode)
+        
+        if not os.path.exists(mode_dir):
+            raise ValueError(f"Mode directory {mode_dir} does not exist.")
+        
+        self.mode_dir = mode_dir
+        self.mode = mode
+        self.patch_size = patch_size
+        self.stride_size = stride_size
+        self.transform = transform
+        
+        # Get all class directories
+        class_dirs = [d for d in os.listdir(mode_dir) 
+                     if os.path.isdir(os.path.join(mode_dir, d))]
+        class_dirs.sort()  # Ensure consistent ordering
+        
+        self.indices = []
+        # Iterate through each class directory
+        for class_name in class_dirs:
+            class_path = os.path.join(mode_dir, class_name)
+            # Get all image files in this class directory
+            image_files = [f for f in os.listdir(class_path) 
+                          if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            
+            for image_file in image_files:
+                img_path = os.path.join(class_path, image_file)
+                try:
+                    img = Image.open(img_path)
+                    width, height = img.size
+                    if width >= patch_size and height >= patch_size:
+                        # Store relative path from mode_dir for consistency
+                        relative_path = os.path.join(class_name, image_file)
+                        self.indices.append(relative_path)
+                    img.close()
+                except Exception as e:
+                    # Skip corrupted images
+                    print(f"Warning: Could not load image {img_path}: {e}")
+                    continue
+    
+    def __len__(self):
+        return len(self.indices)
+    
+    def __getitem__(self, index):
+        relative_path = self.indices[index]
+        img_path = os.path.join(self.mode_dir, relative_path)
+        img = Image.open(img_path)
+        
+        if self.mode == 'test':
+            width, height = img.size
+            num_patches_x = (width - self.patch_size) // self.stride_size + 1
+            num_patches_y = (height - self.patch_size) // self.stride_size + 1
+            cropped_width = (num_patches_x - 1) * self.stride_size + self.patch_size
+            cropped_height = (num_patches_y - 1) * self.stride_size + self.patch_size
+            
+            image = img.crop((0, 0, cropped_width, cropped_height))
+        else:
+            image = img
+        
+        if img.mode != 'RGB':
+            raise ValueError("image: {} isn't RGB mode.".format(relative_path))
+        if self.transform is not None:
+            image = self.transform(image)
+        
+        return image, relative_path
+
+class MultiImageNet(Dataset):
+    def __init__(self,
+                 root_dirs: dict,
+                 mode: str,
+                 patch_size: int,
+                 stride_size: int,
+                 transform=None):
+        """
+        Multi-condition ImageNet dataset for alignment tasks.
+        
+        Args:
+            root_dirs: Dictionary with condition names as keys and root paths as values.
+                      Must contain 'target' key for the target condition.
+                      Example: {'target': '/path/to/depth/', 'edge': '/path/to/edge/'}
+            mode: 'train', 'val', or 'test'
+            patch_size: Size of patches to extract
+            stride_size: Stride for patch extraction
+            transform: Optional transform to apply
+        """
+        if 'target' not in root_dirs:
+            raise ValueError("root_dirs must contain 'target' key for target condition.")
+        
+        self.root_dirs = root_dirs
+        self.condition_names = list(root_dirs.keys())
+        self.mode = mode
+        self.patch_size = patch_size
+        self.stride_size = stride_size
+        self.transform = transform
+        
+        # Verify all mode directories exist
+        self.mode_dirs = {}
+        for cond_name, root_dir in root_dirs.items():
+            mode_dir = os.path.join(root_dir, mode)
+            if not os.path.exists(mode_dir):
+                raise ValueError(f"Mode directory {mode_dir} does not exist for condition {cond_name}.")
+            self.mode_dirs[cond_name] = mode_dir
+        
+        # Get common image indices based on target condition
+        target_mode_dir = self.mode_dirs['target']
+        class_dirs = [d for d in os.listdir(target_mode_dir) 
+                     if os.path.isdir(os.path.join(target_mode_dir, d))]
+        class_dirs.sort()
+        
+        self.indices = []
+        # Iterate through each class directory in target condition
+        for class_name in class_dirs:
+            target_class_path = os.path.join(target_mode_dir, class_name)
+            target_image_files = [f for f in os.listdir(target_class_path) 
+                                if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            
+            for image_file in target_image_files:
+                # Check if corresponding images exist in all conditions
+                all_exist = True
+                for cond_name in self.condition_names:
+                    cond_class_path = os.path.join(self.mode_dirs[cond_name], class_name)
+                    cond_img_path = os.path.join(cond_class_path, image_file)
+                    if not os.path.exists(cond_img_path):
+                        all_exist = False
+                        break
+                
+                if all_exist:
+                    # Verify target image meets size requirements
+                    target_img_path = os.path.join(target_class_path, image_file)
+                    try:
+                        img = Image.open(target_img_path)
+                        width, height = img.size
+                        if width >= patch_size and height >= patch_size:
+                            relative_path = os.path.join(class_name, image_file)
+                            self.indices.append(relative_path)
+                        img.close()
+                    except Exception as e:
+                        print(f"Warning: Could not load target image {target_img_path}: {e}")
+                        continue
+    
+    def __len__(self):
+        return len(self.indices)
+    
+    def __getitem__(self, index):
+        relative_path = self.indices[index]
+        
+        # Load images for all conditions
+        images = {}
+        for cond_name in self.condition_names:
+            img_path = os.path.join(self.mode_dirs[cond_name], relative_path)
+            img = Image.open(img_path)
+            
+            if self.mode == 'test':
+                width, height = img.size
+                num_patches_x = (width - self.patch_size) // self.stride_size + 1
+                num_patches_y = (height - self.patch_size) // self.stride_size + 1
+                cropped_width = (num_patches_x - 1) * self.stride_size + self.patch_size
+                cropped_height = (num_patches_y - 1) * self.stride_size + self.patch_size
+                
+                image = img.crop((0, 0, cropped_width, cropped_height))
+            else:
+                image = img
+            
+            if img.mode != 'RGB':
+                raise ValueError(f"Image {relative_path} for condition {cond_name} isn't RGB mode.")
+            
+            if self.transform is not None:
+                image = self.transform(image)
+            
+            images[cond_name] = image
+        
+        return images, relative_path
+
 def get_noise(image_origin, sigma):
     image_noise = torch.empty_like(image_origin)
     image_noise.copy_(image_origin)
@@ -278,3 +459,27 @@ def compute_indicators(image_true, image_restored):
     NMI = normalized_mutual_information(image_true, image_restored)
 
     return PSNR, SSIM, NMI, LPIPS.item()
+
+
+if __name__ == "__main__":
+    from torchvision import transforms
+
+    # 定义变换
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+    ])
+
+    # 创建数据集实例
+    dataset = Imagenet(
+        root_dir=r"B:\datasets\imagenet-part/img/",
+        mode='train',  # 或 'val', 'test'
+        patch_size=224,
+        stride_size=112,
+        transform=transform
+    )
+
+    # 使用数据集
+    image, path = dataset[1]
+    print(f"Image shape: {image.shape}")
+    print(f"Image path: {path}")

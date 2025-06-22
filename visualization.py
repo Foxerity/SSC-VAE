@@ -9,6 +9,7 @@ def plot_image(image, image_fold_path, image_name, channels):
     else:
         plt.imshow(image)
     plt.axis('off')
+    os.makedirs(os.path.dirname(os.path.join(image_fold_path, image_name)), exist_ok=True)
     plt.savefig(os.path.join(image_fold_path, image_name), dpi=300)
     plt.close()
     
@@ -34,6 +35,7 @@ def plot_dict(dictionary, image_fold_path, image_name):
 
     fig.subplots_adjust(wspace=0.2, hspace=0.2)
 
+    os.makedirs(os.path.dirname(os.path.join(image_fold_path, image_name)), exist_ok=True)
     plt.savefig(os.path.join(image_fold_path, image_name))
     plt.close()
 
@@ -43,5 +45,7 @@ def plot_dict_tsne(dictionary, image_fold_path, image_name):
     plt.figure(figsize=(10, 10))
     plt.scatter(dictionary_2d[:, 0], dictionary_2d[:, 1], s=10)
     plt.title('Visualization of Dictionary')
+
+    os.makedirs(os.path.dirname(os.path.join(image_fold_path, image_name)), exist_ok=True)
     plt.savefig(os.path.join(image_fold_path, image_name))
     plt.close()

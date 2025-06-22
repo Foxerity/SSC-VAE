@@ -1,0 +1,43 @@
+{
+  "data": {
+    "root_dirs": {
+      "target": "/data/ymx/dataset/imagenet-part/imgnet",
+      "depth": "/data/ymx/dataset/depth-maps/imgnet",
+      "edge": "/data/ymx/dataset/edge-maps/imgnet",
+      "normal": "/data/ymx/dataset/normal-maps/imgnet"
+    },
+    "patch_size": 256,
+    "stride_size": 256,
+    "batch_size": 16,
+    "num_workers": 4
+  },
+  "model": {
+    "in_channels": 3,
+    "hid_channels_1": 64,
+    "hid_channels_2": 128,
+    "out_channels": 256,
+    "down_samples": 3,
+    "num_groups": 4,
+    "num_atoms": 512,
+    "num_dims": 256,
+    "num_iters": 10
+  },
+  "train": {
+    "epochs": 100,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-5,
+    "save_path": "./results_multi_sscvae",
+    "save_interval": 10,
+    "log_interval": 100,
+    "validation_interval": 5
+  },
+  "loss": {
+    "recon_weight": 1.0,
+    "latent_weight": 0.1,
+    "alignment_weight": 1.0,
+    "sparsity_weight": 0.01
+  },
+  "test": {
+    "model_id": "best"
+  }
+}

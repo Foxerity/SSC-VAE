@@ -629,3 +629,144 @@ class VQVAE(nn.Module):
         x_recon = torch.sigmoid(x_recon)
 
         return x_recon, vq_loss, dictionary
+
+
+class MultiSSCVAE(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 hid_channels_1,
+                 hid_channels_2,
+                 out_channels,
+                 down_samples,
+                 num_groups,
+                 num_atoms,
+                 num_dims,
+                 num_iters,
+                 device):
+        super(MultiSSCVAE, self).__init__()
+        
+        # Shared encoder for all conditions
+        self._encoder = Encoder(in_channels=in_channels,
+                                hid_channels_1=hid_channels_1,
+                                hid_channels_2=hid_channels_2,
+                                out_channels=out_channels,
+                                down_samples=down_samples,
+                                num_groups=num_groups)
+        
+        # Shared decoder for target condition reconstruction
+        self._decoder = Decoder(in_channels=in_channels,
+                                hid_channels_1=hid_channels_1,
+                                hid_channels_2=hid_channels_2,
+                                out_channels=out_channels,
+                                up_samples=down_samples,
+                                num_groups=num_groups)
+        
+        # Shared LISTA for sparse coding
+        self._LISTA = AttentiveLISTA(num_atoms=num_atoms,
+                                     num_dims=num_dims,
+                                     num_iters=num_iters,
+                                     device=device)
+    
+    def forward(self, x_dict):
+        """
+        Forward pass for multi-condition alignment.
+        
+        Args:
+            x_dict: Dictionary with condition names as keys and tensors as values
+                   Must contain 'target' key for target condition
+        
+        Returns:
+            recon_dict: Dictionary with reconstructed images for each condition
+            z_dict: Dictionary with sparse codes for each condition  
+            latent_loss_dict: Dictionary with latent losses for each condition
+            alignment_loss: Loss for aligning non-target conditions to target
+            dictionary: Learned dictionary
+        """
+        if 'target' not in x_dict:
+            raise ValueError("Input dictionary must contain 'target' key.")
+        
+        recon_dict = {}
+        z_dict = {}
+        latent_loss_dict = {}
+        ex_dict = {}
+        ex_recon_dict = {}
+        
+        # Process each condition
+        for cond_name, x in x_dict.items():
+            # Encode condition
+            ex = self._encoder(x)  # [B, C, H, W] -> [B, D, h, w]
+            ex_dict[cond_name] = ex
+            
+            # Sparse coding
+            z, ex_recon, dictionary = self._LISTA(ex)  # [B, D, h, w] -> [B, K, h, w], [B, D, h, w]
+            ex_recon_dict[cond_name] = ex_recon
+            
+            # Decode to target condition space
+            x_recon = self._decoder(ex_recon)  # [B, D, h, w] -> [B, C, H, W]
+            x_recon = torch.sigmoid(x_recon)
+            
+            # Store results
+            recon_dict[cond_name] = x_recon
+            z_dict[cond_name] = z
+            latent_loss_dict[cond_name] = torch.sum((ex_recon - ex).pow(2), dim=1).mean()
+        
+        # Compute alignment loss: align non-target conditions to target in latent space
+        alignment_loss = 0.0
+        target_ex = ex_dict['target']
+        target_ex_recon = ex_recon_dict['target']
+        
+        for cond_name in x_dict.keys():
+            if cond_name != 'target':
+                # Align encoded features
+                alignment_loss += F.mse_loss(ex_dict[cond_name], target_ex)
+                # Align reconstructed features  
+                alignment_loss += F.mse_loss(ex_recon_dict[cond_name], target_ex_recon)
+        
+        return recon_dict, z_dict, latent_loss_dict, alignment_loss, dictionary
+    
+    def align_to_target(self, x_dict):
+        """
+        Align all conditions to target condition.
+        
+        Args:
+            x_dict: Dictionary with condition names as keys and tensors as values
+        
+        Returns:
+            aligned_dict: Dictionary with all conditions aligned to target space
+        """
+        aligned_dict = {}
+        
+        for cond_name, x in x_dict.items():
+            # Encode condition
+            ex = self._encoder(x)
+            
+            # Sparse coding
+            z, ex_recon, _ = self._LISTA(ex)
+            
+            # Decode to target condition space
+            x_aligned = self._decoder(ex_recon)
+            x_aligned = torch.sigmoid(x_aligned)
+            
+            aligned_dict[cond_name] = x_aligned
+        
+        return aligned_dict
+    
+    def generation(self, input_z_dict):
+        """
+        Generate images from sparse codes.
+        
+        Args:
+            input_z_dict: Dictionary with condition names as keys and sparse codes as values
+        
+        Returns:
+            generation_dict: Dictionary with generated images for each condition
+        """
+        generation_dict = {}
+        
+        for cond_name, z in input_z_dict.items():
+            ex = self._LISTA.generation(z)  # [B, K, h, w] -> [B, D, h, w]
+            x_generation = self._decoder(ex)  # [B, D, h, w] -> [B, C, H, W]
+            x_generation = torch.sigmoid(x_generation)
+            generation_dict[cond_name] = x_generation
+        
+        return generation_dict

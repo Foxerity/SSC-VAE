@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from tqdm import tqdm
 
 import os
 import argparse
@@ -10,7 +11,7 @@ import json
 from types import SimpleNamespace
 import csv
 
-from utils import GrayDataset, UltrasoundDataset, MiniImagenet, get_recon_loss, hoyer_metric
+from utils import GrayDataset, UltrasoundDataset, MiniImagenet, get_recon_loss, hoyer_metric, Imagenet
 from models import SSCVAE
 from visualization import plot_dict
 
@@ -83,12 +84,22 @@ elif data_args.dataset == 'ultrasound':
                                     mode="val",
                                     transform=data_transform["val"])
 elif data_args.dataset == 'imagenet':
-    train_dataset = MiniImagenet(root_dir=data_args.root_dir,
+    # train_dataset = MiniImagenet(root_dir=data_args.root_dir,
+    #                              mode="train",
+    #                              patch_size=data_args.patch_size,
+    #                              stride_size=data_args.stride_size,
+    #                              transform=data_transform["train"])
+    # val_dataset = MiniImagenet(root_dir=data_args.root_dir,
+    #                            mode="val",
+    #                            patch_size=data_args.patch_size,
+    #                            stride_size=data_args.stride_size,
+    #                            transform=data_transform["val"])
+    train_dataset = Imagenet(root_dir=data_args.root_dir,
                                  mode="train",
                                  patch_size=data_args.patch_size,
                                  stride_size=data_args.stride_size,
                                  transform=data_transform["train"])
-    val_dataset = MiniImagenet(root_dir=data_args.root_dir,
+    val_dataset = Imagenet(root_dir=data_args.root_dir,
                                mode="val",
                                patch_size=data_args.patch_size,
                                stride_size=data_args.stride_size,
@@ -139,14 +150,21 @@ with open(csv_filename, 'w', newline='') as csvfile:
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
     writer.writeheader()
 
-for epoch in range(train_args.epochs):
+# 创建主进度条显示epoch进度
+epoch_pbar = tqdm(range(train_args.epochs), desc="Training Progress", position=0)
+
+for epoch in epoch_pbar:
     # train
     train_recon_loss_item = 0
     train_latent_loss_item = 0
     train_total_loss_item = 0
     train_sparsity_item = 0
 
-    for image_origin, _ in train_loader:
+    # 创建训练进度条
+    train_pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{train_args.epochs} [Train]", 
+                      position=1, leave=False)
+    
+    for batch_idx, (image_origin, _) in enumerate(train_pbar):
         # get the inputs
         image_origin = image_origin.to(device)
         bs, _, _, _ = image_origin.shape
@@ -171,6 +189,17 @@ for epoch in range(train_args.epochs):
 
         # optimize
         optimizer.step()
+        
+        # 更新训练进度条显示当前batch的损失
+        current_avg_recon = train_recon_loss_item / ((batch_idx + 1) * bs)
+        current_avg_total = train_total_loss_item / ((batch_idx + 1) * bs)
+        current_sparsity = train_sparsity_item / ((batch_idx + 1) * bs)
+        
+        train_pbar.set_postfix({
+            'Recon': f'{current_avg_recon:.4f}',
+            'Total': f'{current_avg_total:.4f}',
+            'Sparse': f'{current_sparsity:.4f}'
+        })
 
     train_recon_loss_item /= train_image_num
     train_latent_loss_item /= train_image_num
@@ -183,8 +212,12 @@ for epoch in range(train_args.epochs):
     val_total_loss_item = 0
     val_sparsity_item = 0
 
+    # 创建验证进度条
+    val_pbar = tqdm(val_loader, desc=f"Epoch {epoch+1}/{train_args.epochs} [Val]", 
+                    position=1, leave=False)
+    
     with torch.no_grad():
-        for image_origin, _ in val_loader:
+        for batch_idx, (image_origin, _) in enumerate(val_pbar):
             # get the inputs
             image_origin = image_origin.to(device)
             bs, _, _, _ = image_origin.shape
@@ -201,24 +234,45 @@ for epoch in range(train_args.epochs):
             val_latent_loss_item += latent_loss.item() * bs
             val_total_loss_item += loss.item() * bs
             val_sparsity_item += sparsity.item() * bs
+            
+            # 更新验证进度条显示当前batch的损失
+            current_avg_recon = val_recon_loss_item / ((batch_idx + 1) * bs)
+            current_avg_total = val_total_loss_item / ((batch_idx + 1) * bs)
+            current_sparsity = val_sparsity_item / ((batch_idx + 1) * bs)
+            
+            val_pbar.set_postfix({
+                'Recon': f'{current_avg_recon:.4f}',
+                'Total': f'{current_avg_total:.4f}',
+                'Sparse': f'{current_sparsity:.4f}'
+            })
 
     val_recon_loss_item /= val_image_num
     val_latent_loss_item /= val_image_num
     val_total_loss_item /= val_image_num
     val_sparsity_item /= val_image_num
 
+    # 更新主进度条显示当前epoch的损失信息
+    epoch_pbar.set_postfix({
+        'T_Recon': f'{train_recon_loss_item:.4f}',
+        'T_Total': f'{train_total_loss_item:.4f}',
+        'V_Recon': f'{val_recon_loss_item:.4f}',
+        'V_Total': f'{val_total_loss_item:.4f}',
+        'T_Sparse': f'{train_sparsity_item:.4f}',
+        'V_Sparse': f'{val_sparsity_item:.4f}'
+    })
+
     # write loss
     with open(csv_filename, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writerow({'Epoch': epoch + 1,
-                         'Train Recon Loss': train_recon_loss_item,
-                         'Train Latent Loss': train_latent_loss_item,
-                         'Train Total Loss': train_total_loss_item,
-                         'Train Sparsity': train_sparsity_item,
-                         'Val Recon Loss': val_recon_loss_item,
-                         'Val Latent Loss': val_latent_loss_item,
-                         'Val Total Loss': val_total_loss_item,
-                         'Val Sparsity': val_sparsity_item})
+                         'Train Recon Loss': f"{train_recon_loss_item:.5f}",
+                         'Train Latent Loss': f"{train_latent_loss_item:.5f}",
+                         'Train Total Loss': f"{train_total_loss_item:.5f}",
+                         'Train Sparsity': f"{train_sparsity_item:.5f}",
+                         'Val Recon Loss': f"{val_recon_loss_item:.5f}",
+                         'Val Latent Loss': f"{val_latent_loss_item:.5f}",
+                         'Val Total Loss': f"{val_total_loss_item:.5f}",
+                         'Val Sparsity': f"{val_sparsity_item:.5f}"})
 
     # save model and dict
     if (epoch + 1) % train_args.save_frequency == 0:

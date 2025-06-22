@@ -9,7 +9,7 @@ import json
 from types import SimpleNamespace
 import csv
 
-from utils import GrayDataset, UltrasoundDataset, MiniImagenet, hoyer_metric, compute_indicators, slice_image, recon_image
+from utils import GrayDataset, UltrasoundDataset, MiniImagenet, hoyer_metric, compute_indicators, slice_image, recon_image, Imagenet
 from models import SSCVAE
 from visualization import plot_images, plot_dict_tsne
 
@@ -59,6 +59,12 @@ elif data_args.dataset == 'imagenet':
                                 patch_size=data_args.patch_size,
                                 stride_size=data_args.stride_size,
                                 transform=data_transform["test"])
+elif data_args.dataset == 'imagenetfloder':
+    test_dataset = Imagenet(root_dir=data_args.root_dir,
+                            mode="val",
+                            patch_size=data_args.patch_size,
+                            stride_size=data_args.stride_size,
+                            transform=data_transform["test"])
 else:
     raise ValueError("dataset: {} isn't allowed.".format(data_args.dataset))
 
@@ -102,7 +108,7 @@ with torch.no_grad():
         name = name[0]
         image_origin = image_origin.to(device)
 
-        if data_args.dataset == 'gray' or data_args.dataset == 'imagenet':
+        if data_args.dataset == 'gray' or data_args.dataset == 'imagenet' or data_args.dataset == 'imagenetfloder':
             ori_shape = image_origin.shape
             patches = slice_image(image_origin, data_args.patch_size, data_args.stride_size).to(device)
 
@@ -116,7 +122,7 @@ with torch.no_grad():
             image_recon, z, _, dictionary = model(image_origin)
 
             plot_dict_tsne(dictionary, './', 'sscvae_tsne.png')
-        break
+
 
         sparsity = hoyer_metric(z).item()
         PSNR, SSIM, NMI, LPIPS = compute_indicators(image_origin, image_recon)
@@ -137,3 +143,4 @@ with torch.no_grad():
                              'SSIM': SSIM,
                              'NMI': NMI,
                              'LPIPS': LPIPS})
+        break
