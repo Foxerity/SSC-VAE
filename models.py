@@ -19,7 +19,7 @@ class ChannelAttention(nn.Module):
             nn.Linear(in_channels // reduction, in_channels, bias=False),
         )
         self._sigmoid = nn.Sigmoid()
-    
+
     def forward(self, x):
         b, c, _, _ = x.size()
         avgOut = self._fc(self._avg_pool(x).view(b, c))  # [B, C, H, W] -> [B, C, 1, 1] -> [B, C]
@@ -40,7 +40,7 @@ class SpatialAttention(nn.Module):
                                padding=(kernel_size - 1) // 2,
                                bias=False)
         self._sigmoid = nn.Sigmoid()
-    
+
     def forward(self, x):
         b, _, h, w = x.size()
         avgOut = torch.mean(x, dim=1, keepdim=True)  # [B, C, H, W] -> [B, 1, H, W]
@@ -59,7 +59,7 @@ class CBAM(nn.Module):
         super(CBAM, self).__init__()
         self.ChannelAtt = ChannelAttention(in_channels, reduction)
         self.SpatialAtt = SpatialAttention(kernel_size)
-    
+
     def forward(self, x):
         x = self.ChannelAtt(x)  # [B, C, H, W]
         x = self.SpatialAtt(x)  # [B, C, H, W]
@@ -71,7 +71,7 @@ class ResidualBlock(nn.Module):
                  in_channels,
                  hid_channels):
         super(ResidualBlock, self).__init__()
-        
+
         self._block = nn.Sequential(
             nn.ReLU(),
             nn.Conv2d(in_channels=in_channels,
@@ -82,7 +82,7 @@ class ResidualBlock(nn.Module):
                       out_channels=in_channels,
                       kernel_size=1, stride=1, bias=False)
         )
-    
+
     def forward(self, x):
         return x + self._block(x)
 
@@ -101,7 +101,7 @@ class DownSampleBlock(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )
-    
+
     def forward(self, x):
         return self._block(x)
 
@@ -122,7 +122,7 @@ class UpSampleBlock(nn.Module):
             nn.BatchNorm2d(out_channels),
             nn.ReLU()
         )
-    
+
     def forward(self, x):
         return self._block(x)
 
@@ -130,6 +130,7 @@ class UpSampleBlock(nn.Module):
 class Swish(nn.Module):
     def __init__(self):
         super(Swish, self).__init__()
+
     def forward(self, x):
         return x * torch.sigmoid(x)
 
@@ -190,7 +191,7 @@ class Encoder(nn.Module):
         self._conv_1 = nn.Conv2d(in_channels=in_channels,
                                  out_channels=hid_channels_1,
                                  kernel_size=3, stride=1, padding=1)
-        
+
         # [B, C', H, W] -> [B, C'', h, w]
         self._down_samples = nn.ModuleList()
         for i in range(down_samples):
@@ -211,7 +212,7 @@ class Encoder(nn.Module):
                                         hid_channels=hid_channels_2 // 2)
         self._res_2 = ResidualBlock(in_channels=hid_channels_2,
                                     hid_channels=hid_channels_2 // 2)
-        
+
         self._group_norm = nn.GroupNorm(num_groups=num_groups,
                                         num_channels=hid_channels_2)
         self._swish = Swish()
@@ -260,7 +261,7 @@ class Decoder(nn.Module):
                                         hid_channels=hid_channels_2 // 2)
         self._res_2 = ResidualBlock(in_channels=hid_channels_2,
                                     hid_channels=hid_channels_2 // 2)
-        
+
         # [B, C'', h, w] -> [B, C', H, W]
         self._up_samples = nn.ModuleList()
         for i in range(up_samples):
@@ -273,7 +274,7 @@ class Decoder(nn.Module):
                 UpSampleBlock(in_channels=cur_in_channels,
                               out_channels=hid_channels_1)
             )
-        
+
         # [B, C', H, W] -> [B, C', H, W]
         self._group_norm = nn.GroupNorm(num_groups=num_groups,
                                         num_channels=hid_channels_1)
@@ -283,7 +284,7 @@ class Decoder(nn.Module):
         self._conv_2 = nn.Conv2d(in_channels=hid_channels_1,
                                  out_channels=in_channels,
                                  kernel_size=3, stride=1, padding=1)
-        
+
     def forward(self, x):
         x = self._conv_1(x)
 
@@ -326,11 +327,12 @@ class LISTA(nn.Module):
         self._Identity = torch.eye(num_atoms).to(device)  # [K, K]
 
         self._num_iters = num_iters
-    
+
     def initialize_dct_weights(self):
         weights = torch.zeros(self._num_atoms, self._num_dims).to(self._device)  # [K, D]
         for i in range(self._num_atoms):
-            atom = torch.cos((2 * torch.arange(self._num_dims) + 1) * i * (3.141592653589793 / (2 * self._num_dims)))# * math.sqrt(2 / self._num_dims)
+            atom = torch.cos((2 * torch.arange(self._num_dims) + 1) * i * (
+                        3.141592653589793 / (2 * self._num_dims)))  # * math.sqrt(2 / self._num_dims)
             weights[i, :] = atom / torch.norm(atom, p=2)
         return weights.t()  # [D, K]
 
@@ -383,9 +385,9 @@ class AttentiveLISTA(nn.Module):
                                out_channels=num_atoms,
                                kernel_size=3, stride=1, padding=1)
         self._res1 = ResidualBlock(in_channels=num_atoms,
-                                   hid_channels=num_atoms//2)
+                                   hid_channels=num_atoms // 2)
         self._res2 = ResidualBlock(in_channels=num_atoms,
-                                   hid_channels=num_atoms//2)
+                                   hid_channels=num_atoms // 2)
         self._cbam = CBAM(in_channels=num_atoms,
                           reduction=16,
                           kernel_size=3)
@@ -394,11 +396,12 @@ class AttentiveLISTA(nn.Module):
         self._Identity = torch.eye(num_atoms).to(device)  # [K, K]
 
         self._num_iters = num_iters
-    
+
     def initialize_dct_weights(self):
         weights = torch.zeros(self._num_atoms, self._num_dims).to(self._device)  # [K, D]
         for i in range(self._num_atoms):
-            atom = torch.cos((2 * torch.arange(self._num_dims) + 1) * i * (3.141592653589793 / (2 * self._num_dims)))# * math.sqrt(2 / self._num_dims)
+            atom = torch.cos((2 * torch.arange(self._num_dims) + 1) * i * (
+                        3.141592653589793 / (2 * self._num_dims)))  # * math.sqrt(2 / self._num_dims)
             weights[i, :] = atom / torch.norm(atom, p=2)
         return weights.t()  # [D, K]
 
@@ -470,8 +473,8 @@ class SCVAE(nn.Module):
         self._LISTA = LISTA(num_atoms=num_atoms,
                             num_dims=num_dims,
                             num_iters=num_iters,
-                            h=256//(2**down_samples),
-                            w=256//(2**down_samples),
+                            h=256 // (2 ** down_samples),
+                            w=256 // (2 ** down_samples),
                             device=device)
 
     def generation(self, input_z):
@@ -544,6 +547,7 @@ class VectorQuantizer(nn.Module):
     Reference:
     [1] https://github.com/AntixK/PyTorch-VAE/blob/master/models/vq_vae.py
     """
+
     def __init__(self,
                  num_atoms,
                  num_dims,
@@ -588,7 +592,8 @@ class VectorQuantizer(nn.Module):
         # Add the residue back to the latents
         quantized_latents = latents + (quantized_latents - latents).detach()
 
-        return quantized_latents.permute(0, 3, 1, 2).contiguous(), vq_loss, self.embedding.weight.permute(1, 0).contiguous()  # [B, D, H, W]
+        return quantized_latents.permute(0, 3, 1, 2).contiguous(), vq_loss, self.embedding.weight.permute(1,
+                                                                                                          0).contiguous()  # [B, D, H, W]
 
 
 class VQVAE(nn.Module):
@@ -621,7 +626,7 @@ class VQVAE(nn.Module):
         self._vq_layer = VectorQuantizer(num_atoms=num_atoms,
                                          num_dims=num_dims,
                                          beta=beta)
-    
+
     def forward(self, x):
         ex = self._encoder(x)  # [B, C, H, W] -> [B, D, h, w]
         ex_recon, vq_loss, dictionary = self._vq_layer(ex)  # [B, D, h, w] -> [B, D, h, w]
@@ -629,6 +634,87 @@ class VQVAE(nn.Module):
         x_recon = torch.sigmoid(x_recon)
 
         return x_recon, vq_loss, dictionary
+
+
+class SpecificEncoder(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 hid_channels_1,
+                 hid_channels_2,
+                 down_samples):
+        super(SpecificEncoder, self).__init__()
+
+        # [B, C, H, W] -> [B, C', H, W]
+        self._conv_1 = nn.Conv2d(in_channels=in_channels,
+                                 out_channels=hid_channels_1,
+                                 kernel_size=3, stride=1, padding=1)
+
+        # [B, C', H, W] -> [B, C'', h, w]
+        # 只进行简单的下采样，不包含复杂的处理
+        self._down_samples = nn.ModuleList()
+        for i in range(down_samples):
+            cur_in_channels = hid_channels_1 if i == 0 else hid_channels_2
+            self._down_samples.append(
+                DownSampleBlock(in_channels=cur_in_channels,
+                                out_channels=hid_channels_2)
+            )
+
+    def forward(self, x):
+        x = self._conv_1(x)
+
+        for layer in self._down_samples:
+            x = layer(x)
+
+        return x
+
+
+class SharedEncoder(nn.Module):
+    def __init__(self,
+                 hid_channels_2,
+                 num_dims,
+                 down_samples,
+                 num_groups):
+        super(SharedEncoder, self).__init__()
+        # [B, C', H, W] -> [B, C'', h, w]
+        self._down_samples = nn.ModuleList()
+        for i in range(down_samples):
+            cur_in_channels = hid_channels_2
+            self._down_samples.append(
+                ResidualBlock(in_channels=cur_in_channels,
+                              hid_channels=cur_in_channels // 2)
+            )
+            self._down_samples.append(
+                DownSampleBlock(in_channels=cur_in_channels,
+                                out_channels=hid_channels_2)
+            )
+
+        # [B, C'', h, w] -> [B, C'', h, w]
+        self._res_1 = ResidualBlock(in_channels=hid_channels_2,
+                                    hid_channels=hid_channels_2 // 2)
+        self._non_local = NonLocalBlock(in_channels=hid_channels_2,
+                                        hid_channels=hid_channels_2 // 2)
+        self._res_2 = ResidualBlock(in_channels=hid_channels_2,
+                                    hid_channels=hid_channels_2 // 2)
+
+        self._group_norm = nn.GroupNorm(num_groups=num_groups,
+                                        num_channels=hid_channels_2)
+        self._swish = Swish()
+
+        # [B, C'', h, w] -> [B, num_dims, h, w]
+        self._conv_2 = nn.Conv2d(in_channels=hid_channels_2,
+                                 out_channels=num_dims,
+                                 kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x):
+        x = self._res_1(x)
+        x = self._non_local(x)
+        x = self._res_2(x)
+
+        x = self._group_norm(x)
+        x = self._swish(x)
+        x = self._conv_2(x)
+
+        return x
 
 
 class MultiSSCVAE(nn.Module):
@@ -642,31 +728,57 @@ class MultiSSCVAE(nn.Module):
                  num_atoms,
                  num_dims,
                  num_iters,
+                 cond,
                  device):
         super(MultiSSCVAE, self).__init__()
-        
-        # Shared encoder for all conditions
-        self._encoder = Encoder(in_channels=in_channels,
-                                hid_channels_1=hid_channels_1,
-                                hid_channels_2=hid_channels_2,
-                                out_channels=out_channels,
-                                down_samples=down_samples,
-                                num_groups=num_groups)
-        
+
+        # 保留原始编码器以保持兼容性
+        # self._encoder = Encoder(in_channels=in_channels,
+        #                         hid_channels_1=hid_channels_1,
+        #                         hid_channels_2=hid_channels_2,
+        #                         out_channels=num_dims,  # 编码器输出应该是num_dims
+        #                         down_samples=down_samples,
+        #                         num_groups=num_groups)
+        # 为每个条件创建专属编码器（如果不存在）
+        # 专属编码器字典 - 每个条件一个
+        self._spec_encoders = nn.ModuleDict()
+        for cond_name in cond:
+            if cond_name not in self._spec_encoders:
+                self._spec_encoders[cond_name] = SpecificEncoder(
+                    in_channels=1,  # 获取输入通道数
+                    hid_channels_1=hid_channels_1,  # 使用保存的参数
+                    hid_channels_2=hid_channels_2,  # 使用保存的参数
+                    down_samples=down_samples // 2  # 下采样层数减半
+                )
+
+        # 共享编码器 - 所有条件共用
+        self._share_encoder = SharedEncoder(hid_channels_2=hid_channels_2,
+                                            num_dims=num_dims,
+                                            down_samples=down_samples // 2,
+                                            num_groups=num_groups)
+
         # Shared decoder for target condition reconstruction
         self._decoder = Decoder(in_channels=in_channels,
                                 hid_channels_1=hid_channels_1,
                                 hid_channels_2=hid_channels_2,
-                                out_channels=out_channels,
+                                out_channels=num_dims,  # 解码器输入应该是num_dims
                                 up_samples=down_samples,
                                 num_groups=num_groups)
-        
+
         # Shared LISTA for sparse coding
         self._LISTA = AttentiveLISTA(num_atoms=num_atoms,
                                      num_dims=num_dims,
                                      num_iters=num_iters,
                                      device=device)
-    
+
+        # 保存参数以便后续创建专属编码器
+        # self.in_channels = in_channels
+        # self.hid_channels_1 = hid_channels_1
+        # self.hid_channels_2 = hid_channels_2
+        # self.out_channels = out_channels
+        # self.down_samples = down_samples
+        # self.num_groups = num_groups
+
     def forward(self, x_dict):
         """
         Forward pass for multi-condition alignment.
@@ -678,69 +790,105 @@ class MultiSSCVAE(nn.Module):
         Returns:
             recon_dict: Dictionary with reconstructed images for each condition
             z_dict: Dictionary with sparse codes for each condition  
-            latent_loss_dict: Dictionary with latent losses for each condition
+            latent_loss: Latent loss
             alignment_loss: Loss for aligning non-target conditions to target
-            dictionary: Learned dictionary
+            sparsity_loss: Sparsity loss for sparse codes
         """
         if 'target' not in x_dict:
             raise ValueError("Input dictionary must contain 'target' key.")
-        
+
         recon_dict = {}
         z_dict = {}
-        latent_loss_dict = {}
         ex_dict = {}
         ex_recon_dict = {}
         dictionary = None
-        
-        # Process each condition
+
+        # 处理非目标条件
         for cond_name, x in x_dict.items():
             if cond_name != 'target':
-                # Encode condition
-                ex = self._encoder(x)  # [B, C, H, W] -> [B, D, h, w]
+                # 使用专属编码器和共享编码器
+                ex_spec = self._spec_encoders[cond_name](x)  # 专属编码器处理
+                ex = self._share_encoder(ex_spec)  # 共享编码器处理
                 ex_dict[cond_name] = ex
 
-                # Sparse coding
-                z, ex_recon, dictionary = self._LISTA(ex)  # [B, D, h, w] -> [B, K, h, w], [B, D, h, w]
+                # 稀疏编码
+                z, ex_recon, _ = self._LISTA(ex)  # [B, D, h, w] -> [B, K, h, w], [B, D, h, w]
                 ex_recon_dict[cond_name] = ex_recon
+                z_dict[cond_name] = z
 
-                # Decode to target condition space
+                # 解码到目标条件空间
                 x_recon = self._decoder(ex_recon)  # [B, D, h, w] -> [B, C, H, W]
                 x_recon = torch.sigmoid(x_recon)
-
-                # Store results
                 recon_dict[cond_name] = x_recon
-                z_dict[cond_name] = z
-                latent_loss_dict[cond_name] = torch.sum((ex_recon - ex).pow(2), dim=1).mean()
-        
-        return recon_dict, z_dict, latent_loss_dict, dictionary
-    
+
+        # 计算潜在损失（重构损失）
+        latent_loss = 0.0
+        for cond_name in ex_dict.keys():
+            latent_loss += torch.sum((ex_recon_dict[cond_name] - ex_dict[cond_name]).pow(2), dim=1).mean()
+        latent_loss /= len(ex_dict)
+
+        # 计算稀疏性损失
+        sparsity_loss = 0.0
+        for cond_name, z in z_dict.items():
+            sparsity_loss += torch.mean(torch.abs(z))
+        sparsity_loss /= len(z_dict)
+
+        return recon_dict, z_dict, latent_loss, sparsity_loss
+
     def align_to_target(self, x_dict):
         """
         Align all conditions to target condition.
         
         Args:
             x_dict: Dictionary with condition names as keys and tensors as values
+                   Must contain 'target' key for target condition
         
         Returns:
-            aligned_dict: Dictionary with all conditions aligned to target space
+            aligned_dict: Dictionary with aligned images for each condition
         """
+        if 'target' not in x_dict:
+            raise ValueError("Input dictionary must contain 'target' key.")
+
+        # 为每个条件创建专属编码器（如果不存在）
+        for cond_name in x_dict.keys():
+            if cond_name not in self._spec_encoders:
+                self._spec_encoders[cond_name] = SpecificEncoder(
+                    in_channels=x_dict[cond_name].size(1),  # 获取输入通道数
+                    hid_channels_1=self.hid_channels_1,  # 使用保存的参数
+                    hid_channels_2=self.hid_channels_2,  # 使用保存的参数
+                    down_samples=self.down_samples // 2  # 下采样层数减半
+                )
+
         aligned_dict = {}
-        
+
+        # 处理目标条件
+        target_x = x_dict['target']
+        target_ex_spec = self._spec_encoders['target'](target_x)  # 专属编码器处理
+        target_ex = self._share_encoder(target_ex_spec)  # 共享编码器处理
+        target_z, target_ex_recon, _ = self._LISTA(target_ex)  # 稀疏编码
+
+        # 解码目标条件
+        target_recon = self._decoder(target_ex_recon)
+        target_recon = torch.sigmoid(target_recon)
+        aligned_dict['target'] = target_recon
+
+        # 处理非目标条件
         for cond_name, x in x_dict.items():
-            # Encode condition
-            ex = self._encoder(x)
-            
-            # Sparse coding
-            z, ex_recon, _ = self._LISTA(ex)
-            
-            # Decode to target condition space
-            x_aligned = self._decoder(ex_recon)
-            x_aligned = torch.sigmoid(x_aligned)
-            
-            aligned_dict[cond_name] = x_aligned
-        
+            if cond_name != 'target':
+                # 使用专属编码器和共享编码器
+                ex_spec = self._spec_encoders[cond_name](x)  # 专属编码器处理
+                ex = self._share_encoder(ex_spec)  # 共享编码器处理
+
+                # 稀疏编码
+                z, ex_recon, _ = self._LISTA(ex)  # [B, D, h, w] -> [B, K, h, w], [B, D, h, w]
+
+                # 解码到目标条件空间
+                x_recon = self._decoder(ex_recon)  # [B, D, h, w] -> [B, C, H, W]
+                x_recon = torch.sigmoid(x_recon)
+                aligned_dict[cond_name] = x_recon
+
         return aligned_dict
-    
+
     def generation(self, input_z_dict):
         """
         Generate images from sparse codes.
@@ -752,11 +900,11 @@ class MultiSSCVAE(nn.Module):
             generation_dict: Dictionary with generated images for each condition
         """
         generation_dict = {}
-        
+
         for cond_name, z in input_z_dict.items():
             ex = self._LISTA.generation(z)  # [B, K, h, w] -> [B, D, h, w]
             x_generation = self._decoder(ex)  # [B, D, h, w] -> [B, C, H, W]
             x_generation = torch.sigmoid(x_generation)
             generation_dict[cond_name] = x_generation
-        
+
         return generation_dict

@@ -3,12 +3,12 @@
     "root_dirs": {
       "target": "B:\\datasets\\test/img_depth",
       "depth": "B:\\datasets\\test/img_depth",
-      "edge": "B:\\datasets\\test/img_canny",
-      "normal": "B:\\datasets\\test/img_sketch"
+      "canny": "B:\\datasets\\test/img_canny",
+      "sketch": "B:\\datasets\\test/img_sketch"
     },
     "patch_size": 256,
     "stride_size": 256,
-    "batch_size": 2,
+    "batch_size": 1,
     "num_workers": 4
   },
   "model": {
@@ -20,7 +20,8 @@
     "num_groups": 4,
     "num_atoms": 512,
     "num_dims": 256,
-    "num_iters": 10
+    "num_iters": 10,
+    "cond": ["depth", "canny", "sketch"]
   },
   "train": {
     "epochs": 100,

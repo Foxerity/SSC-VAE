@@ -174,6 +174,7 @@ def main():
         num_atoms=config['model']['num_atoms'],
         num_dims=config['model']['num_dims'],
         num_iters=config['model']['num_iters'],
+        cond=config['model']['cond'],
         device=device
     ).to(device)
 
