@@ -690,6 +690,7 @@ class MultiSSCVAE(nn.Module):
         latent_loss_dict = {}
         ex_dict = {}
         ex_recon_dict = {}
+        dictionary = None
         
         # Process each condition
         for cond_name, x in x_dict.items():

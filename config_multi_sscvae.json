@@ -1,18 +1,18 @@
 {
   "data": {
     "root_dirs": {
-      "target": "/data/ymx/dataset/imagenet-part/imgnet",
-      "depth": "/data/ymx/dataset/depth-maps/imgnet",
-      "edge": "/data/ymx/dataset/edge-maps/imgnet",
-      "normal": "/data/ymx/dataset/normal-maps/imgnet"
+      "target": "B:\\datasets\\test/img_depth",
+      "depth": "B:\\datasets\\test/img_depth",
+      "edge": "B:\\datasets\\test/img_canny",
+      "normal": "B:\\datasets\\test/img_sketch"
     },
     "patch_size": 256,
     "stride_size": 256,
-    "batch_size": 16,
+    "batch_size": 2,
     "num_workers": 4
   },
   "model": {
-    "in_channels": 3,
+    "in_channels": 1,
     "hid_channels_1": 64,
     "hid_channels_2": 128,
     "out_channels": 256,
