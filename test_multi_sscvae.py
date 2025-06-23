@@ -5,7 +5,6 @@ Testing script for MultiSSCVAE model
 """
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import json
@@ -15,13 +14,15 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 from PIL import Image
-
+import lpips
 from models import MultiSSCVAE
 from utils import MultiImageNet, compute_indicators
 
+
 def test_model(model, dataloader, device, save_path):
     model.eval()
-    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    lpips_model = lpips.LPIPS(net='alex').to(device)
     all_indicators = []
     condition_names = None
     
@@ -47,7 +48,7 @@ def test_model(model, dataloader, device, save_path):
                         aligned_img = aligned_dict[cond_name][i:i+1]
                         
                         # Compute quality indicators
-                        psnr, ssim, nmi, lpips = compute_indicators(target_img, aligned_img)
+                        psnr, ssim, nmi, LPIPS = compute_indicators(target_img, aligned_img, lpips_model)
                         
                         all_indicators.append({
                             'batch_idx': batch_idx,
@@ -56,7 +57,7 @@ def test_model(model, dataloader, device, save_path):
                             'PSNR': psnr,
                             'SSIM': ssim,
                             'NMI': nmi,
-                            'LPIPS': lpips,
+                            'LPIPS': LPIPS,
                             'path': paths[i]
                         })
                 
@@ -94,25 +95,6 @@ def save_sample_images(images_dict, aligned_dict, sample_idx, batch_idx, save_pa
         img = tensor_to_pil(img_tensor[sample_idx:sample_idx+1])
         img.save(os.path.join(sample_dir, f'aligned_{cond_name}.png'))
 
-def compute_alignment_metrics(model, dataloader, device):
-    """Compute alignment quality metrics"""
-    model.eval()
-    
-    total_alignment_loss = 0.0
-    total_samples = 0
-    
-    with torch.no_grad():
-        for images_dict, _ in tqdm(dataloader, desc='Computing alignment metrics'):
-            images_dict = {k: v.to(device) for k, v in images_dict.items()}
-            
-            # Forward pass to get alignment loss
-            _, _, _, alignment_loss, _ = model(images_dict)
-            
-            total_alignment_loss += alignment_loss.item() * images_dict['target'].size(0)
-            total_samples += images_dict['target'].size(0)
-    
-    avg_alignment_loss = total_alignment_loss / total_samples
-    return avg_alignment_loss
 
 def analyze_sparse_codes(model, dataloader, device, save_path):
     """Analyze sparse code statistics"""
@@ -125,7 +107,7 @@ def analyze_sparse_codes(model, dataloader, device, save_path):
         for images_dict, _ in tqdm(dataloader, desc='Analyzing sparse codes'):
             images_dict = {k: v.to(device) for k, v in images_dict.items()}
             
-            _, z_dict, _, _, _ = model(images_dict)
+            _, z_dict, _, _ = model(images_dict)
             
             for cond_name, z in z_dict.items():
                 # Compute sparsity (percentage of near-zero activations)
@@ -185,14 +167,14 @@ def main():
     
     # Create transforms
     transform = transforms.Compose([
-        transforms.Resize((256, 256)),
+        transforms.Resize((128, 128)),
         transforms.ToTensor()
     ])
     
     # Create test dataset
     test_dataset = MultiImageNet(
         root_dirs=config['data']['root_dirs'],
-        mode='test',
+        mode='val',
         patch_size=config['data']['patch_size'],
         stride_size=config['data']['stride_size'],
         transform=transform
@@ -236,11 +218,8 @@ def main():
     
     # Test model
     print('Testing model...')
+
     indicators = test_model(model, test_loader, device, save_path)
-    
-    # Compute alignment metrics
-    print('Computing alignment metrics...')
-    avg_alignment_loss = compute_alignment_metrics(model, test_loader, device)
     
     # Analyze sparse codes
     print('Analyzing sparse codes...')
@@ -265,14 +244,11 @@ def main():
             'LPIPS_std': cond_data['LPIPS'].std()
         }
     
-    summary_stats['alignment_loss'] = avg_alignment_loss
-    
     with open(os.path.join(save_path, 'test_summary.json'), 'w') as f:
         json.dump(summary_stats, f, indent=2)
     
     # Print summary
     print('\nTest Results Summary:')
-    print(f'Average Alignment Loss: {avg_alignment_loss:.4f}')
     print('\nCondition Alignment Quality:')
     for cond_name, stats in summary_stats.items():
         if cond_name != 'alignment_loss':

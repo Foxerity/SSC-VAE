@@ -1,7 +1,6 @@
 import torch
 from torch.utils.data import Dataset
 from skimage.metrics import structural_similarity, peak_signal_noise_ratio, normalized_mutual_information
-import lpips
 
 import os
 from PIL import Image
@@ -454,9 +453,7 @@ def hoyer_metric(z):
     return hoyer_metric_value
 
 
-def compute_indicators(image_true, image_restored):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    lpips_model = lpips.LPIPS(net='alex').to(device)
+def compute_indicators(image_true, image_restored, lpips_model):
     # [1, 1, H, W]
     LPIPS = lpips_model(image_true[0], image_restored[0])
 

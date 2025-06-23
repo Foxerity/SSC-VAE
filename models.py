@@ -694,36 +694,25 @@ class MultiSSCVAE(nn.Module):
         
         # Process each condition
         for cond_name, x in x_dict.items():
-            # Encode condition
-            ex = self._encoder(x)  # [B, C, H, W] -> [B, D, h, w]
-            ex_dict[cond_name] = ex
-            
-            # Sparse coding
-            z, ex_recon, dictionary = self._LISTA(ex)  # [B, D, h, w] -> [B, K, h, w], [B, D, h, w]
-            ex_recon_dict[cond_name] = ex_recon
-            
-            # Decode to target condition space
-            x_recon = self._decoder(ex_recon)  # [B, D, h, w] -> [B, C, H, W]
-            x_recon = torch.sigmoid(x_recon)
-            
-            # Store results
-            recon_dict[cond_name] = x_recon
-            z_dict[cond_name] = z
-            latent_loss_dict[cond_name] = torch.sum((ex_recon - ex).pow(2), dim=1).mean()
-        
-        # Compute alignment loss: align non-target conditions to target in latent space
-        alignment_loss = 0.0
-        target_ex = ex_dict['target']
-        target_ex_recon = ex_recon_dict['target']
-        
-        for cond_name in x_dict.keys():
             if cond_name != 'target':
-                # Align encoded features
-                alignment_loss += F.mse_loss(ex_dict[cond_name], target_ex)
-                # Align reconstructed features  
-                alignment_loss += F.mse_loss(ex_recon_dict[cond_name], target_ex_recon)
+                # Encode condition
+                ex = self._encoder(x)  # [B, C, H, W] -> [B, D, h, w]
+                ex_dict[cond_name] = ex
+
+                # Sparse coding
+                z, ex_recon, dictionary = self._LISTA(ex)  # [B, D, h, w] -> [B, K, h, w], [B, D, h, w]
+                ex_recon_dict[cond_name] = ex_recon
+
+                # Decode to target condition space
+                x_recon = self._decoder(ex_recon)  # [B, D, h, w] -> [B, C, H, W]
+                x_recon = torch.sigmoid(x_recon)
+
+                # Store results
+                recon_dict[cond_name] = x_recon
+                z_dict[cond_name] = z
+                latent_loss_dict[cond_name] = torch.sum((ex_recon - ex).pow(2), dim=1).mean()
         
-        return recon_dict, z_dict, latent_loss_dict, alignment_loss, dictionary
+        return recon_dict, z_dict, latent_loss_dict, dictionary
     
     def align_to_target(self, x_dict):
         """

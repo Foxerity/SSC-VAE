@@ -19,12 +19,11 @@ from models import MultiSSCVAE
 from utils import MultiImageNet, get_recon_loss, hoyer_metric
 
 
-def train_epoch(model, dataloader, optimizer, device, epoch, config):
+def train_epoch(model, dataloader, optimizer, device, epoch):
     model.train()
     total_loss = 0.0
     total_recon_loss = 0.0
     total_latent_loss = 0.0
-    total_alignment_loss = 0.0
     total_sparsity_loss = 0.0
 
     progress_bar = tqdm(dataloader, desc=f'Epoch {epoch}')
@@ -36,16 +35,12 @@ def train_epoch(model, dataloader, optimizer, device, epoch, config):
         optimizer.zero_grad()
 
         # Forward pass
-        recon_dict, z_dict, latent_loss_dict, alignment_loss, dictionary = model(images_dict)
+        recon_dict, z_dict, latent_loss_dict, dictionary = model(images_dict)
 
         # Compute reconstruction loss for each condition
         recon_loss = 0.0
         for cond_name in images_dict.keys():
-            if cond_name == 'target':
-                # Target condition reconstructs to itself
-                recon_loss += get_recon_loss(images_dict[cond_name], recon_dict[cond_name])
-            else:
-                # Non-target conditions reconstruct to target
+            if cond_name != 'target':
                 recon_loss += get_recon_loss(images_dict['target'], recon_dict[cond_name])
 
         # Compute latent loss
@@ -57,7 +52,7 @@ def train_epoch(model, dataloader, optimizer, device, epoch, config):
             sparsity_loss += hoyer_metric(z)
 
         # Total loss
-        loss = recon_loss + 0.1 * latent_loss + 0.5 * alignment_loss + 0.01 * sparsity_loss
+        loss = recon_loss + 0.1 * latent_loss + 0.01 * sparsity_loss
 
         # Backward pass
         loss.backward()
@@ -67,57 +62,51 @@ def train_epoch(model, dataloader, optimizer, device, epoch, config):
         total_loss += loss.item()
         total_recon_loss += recon_loss.item()
         total_latent_loss += latent_loss.item()
-        total_alignment_loss += alignment_loss.item()
         total_sparsity_loss += sparsity_loss.item()
 
         # Update progress bar
         progress_bar.set_postfix({
             'Loss': f'{loss.item():.4f}',
             'Recon': f'{recon_loss.item():.4f}',
-            'Align': f'{alignment_loss.item():.4f}'
+            'Latent': f'{latent_loss.item():.4f}',
+            'Sparsity': f'{sparsity_loss.item():.4f}'
         })
 
     avg_loss = total_loss / len(dataloader)
     avg_recon_loss = total_recon_loss / len(dataloader)
     avg_latent_loss = total_latent_loss / len(dataloader)
-    avg_alignment_loss = total_alignment_loss / len(dataloader)
     avg_sparsity_loss = total_sparsity_loss / len(dataloader)
 
-    return avg_loss, avg_recon_loss, avg_latent_loss, avg_alignment_loss, avg_sparsity_loss
+    return avg_loss, avg_recon_loss, avg_latent_loss, avg_sparsity_loss
 
 
 def validate_epoch(model, dataloader, device):
     model.eval()
     total_loss = 0.0
     total_recon_loss = 0.0
-    total_alignment_loss = 0.0
 
     with torch.no_grad():
         for images_dict, _ in dataloader:
             images_dict = {k: v.to(device) for k, v in images_dict.items()}
 
-            recon_dict, z_dict, latent_loss_dict, alignment_loss, dictionary = model(images_dict)
+            recon_dict, z_dict, latent_loss_dict, dictionary = model(images_dict)
 
             # Compute reconstruction loss
             recon_loss = 0.0
             for cond_name in images_dict.keys():
-                if cond_name == 'target':
-                    recon_loss += get_recon_loss(images_dict[cond_name], recon_dict[cond_name])
-                else:
+                if cond_name != 'target':
                     recon_loss += get_recon_loss(images_dict['target'], recon_dict[cond_name])
 
             latent_loss = sum(latent_loss_dict.values())
-            loss = recon_loss + 0.1 * latent_loss + 0.5 * alignment_loss
+            loss = recon_loss + 0.1 * latent_loss
 
             total_loss += loss.item()
             total_recon_loss += recon_loss.item()
-            total_alignment_loss += alignment_loss.item()
 
     avg_loss = total_loss / len(dataloader)
     avg_recon_loss = total_recon_loss / len(dataloader)
-    avg_alignment_loss = total_alignment_loss / len(dataloader)
 
-    return avg_loss, avg_recon_loss, avg_alignment_loss, dictionary
+    return avg_loss, avg_recon_loss, dictionary
 
 
 def main():
@@ -201,18 +190,18 @@ def main():
     train_losses = []
     val_losses = []
 
-    for epoch in range(10, config['train']['epochs'] + 1):
+    for epoch in range(1, config['train']['epochs'] + 1):
         # Train
-        train_loss, train_recon, train_latent, train_align, train_sparse = train_epoch(
-            model, train_loader, optimizer, device, epoch, config
+        train_loss, train_recon, train_latent, train_sparse = train_epoch(
+            model, train_loader, optimizer, device, epoch
         )
 
         # Validate
-        val_loss, val_recon, val_align, dictionary = validate_epoch(model, val_loader, device)
+        val_loss, val_recon, dictionary = validate_epoch(model, val_loader, device)
 
         print(f'Epoch {epoch}:')
-        print(f'  Train - Loss: {train_loss:.4f}, Recon: {train_recon:.4f}, Align: {train_align:.4f}')
-        print(f'  Val   - Loss: {val_loss:.4f}, Recon: {val_recon:.4f}, Align: {val_align:.4f}')
+        print(f'  Train - Loss: {train_loss:.4f}, Recon: {train_recon:.4f}')
+        print(f'  Val   - Loss: {val_loss:.4f}, Recon: {val_recon:.4f}')
 
         # Save losses
         train_losses.append({
@@ -220,7 +209,6 @@ def main():
             'total_loss': train_loss,
             'recon_loss': train_recon,
             'latent_loss': train_latent,
-            'alignment_loss': train_align,
             'sparsity_loss': train_sparse
         })
 
@@ -228,7 +216,6 @@ def main():
             'epoch': epoch,
             'total_loss': val_loss,
             'recon_loss': val_recon,
-            'alignment_loss': val_align
         })
 
         # Save model
